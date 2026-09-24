@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import {
   StyleSheet,
-  Text,
   View,
+  Text,
   TextInput,
   TouchableOpacity,
   Image,
@@ -12,90 +12,114 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
+import { UserProfile } from '../types';
 
 interface LoginScreenProps {
-  onLoginSuccess: () => void;
+  hasBiometrics: boolean;
+  onLoginSuccess: (profile: UserProfile) => void;
+  onBiometricLogin: () => void;
 }
 
-export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+export default function LoginScreen({ hasBiometrics, onLoginSuccess, onBiometricLogin }: LoginScreenProps) {
+  const [codigoOperador, setCodigoOperador] = useState<string>('');
+  const [cedulaClave, setCedulaClave] = useState<string>('');
+  const [authLoading, setAuthLoading] = useState<boolean>(false);
 
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Por favor ingresa correo y contraseña.');
+    const cleanCode = codigoOperador.trim();
+    const cleanCedula = cedulaClave.trim();
+
+    if (!cleanCode || cleanCode.length !== 4) {
+      Alert.alert('Código Requerido', 'Ingresa el código de 4 dígitos (Ej: 0911).');
+      return;
+    }
+    if (!cleanCedula) {
+      Alert.alert('Clave Requerida', 'Ingresa tu número de cédula.');
       return;
     }
 
-    setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password: password,
-    });
+    setAuthLoading(true);
 
-    setLoading(false);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('codigo_operador', cleanCode)
+        .eq('cedula', cleanCedula)
+        .maybeSingle();
 
-    if (error) {
-      Alert.alert('Acceso Denegado', error.message);
-    } else {
-      onLoginSuccess();
+      setAuthLoading(false);
+
+      if (error) {
+        Alert.alert('Error de Base de Datos', error.message);
+        return;
+      }
+
+      if (!data) {
+        Alert.alert('Acceso Denegado', `Código o cédula incorrectos.`);
+        return;
+      }
+
+      await AsyncStorage.setItem('ven911_user_session', JSON.stringify(data));
+      await AsyncStorage.setItem('ven911_biometrics_active', 'true');
+      onLoginSuccess(data as UserProfile);
+    } catch (err: any) {
+      setAuthLoading(false);
+      Alert.alert('Error', err.message || 'Error de conexión.');
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        {/* Logo Institucional */}
-        <View style={styles.logoContainer}>
-          <Image
-            source={require('../../assets/icon.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-          <Text style={styles.headerFlag}>🇻🇪 CCCT VEN 911</Text>
-          <Text style={styles.subHeader}>DEPARTAMENTO DE TECNOLOGÍA</Text>
-          <Text style={styles.title}>Control Operativo de Guardia</Text>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor: '#04271c' }}>
+      <ScrollView contentContainerStyle={styles.authScroll}>
+        <View style={styles.authHeader}>
+          <Image source={require('../../assets/icon.png')} style={styles.authLogo} resizeMode="contain" />
+          <Text style={styles.flagTitle}>🇻🇪 CCCT VEN 911</Text>
+          <Text style={styles.techSubtitle}>DEPARTAMENTO DE TECNOLOGÍA</Text>
+          <Text style={styles.systemTitle}>Control Operativo de Guardia</Text>
         </View>
 
-        {/* Formulario */}
-        <View style={styles.formContainer}>
-          <Text style={styles.label}>Correo Electrónico</Text>
+        <View style={styles.card}>
+          <Text style={styles.label}>Usuario (Código de 4 Dígitos)</Text>
           <TextInput
             style={styles.input}
-            placeholder="ejemplo@ven911.gob.ve"
-            placeholderTextColor="#64748b"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
+            placeholder="Ej: 0911"
+            placeholderTextColor="#6ee7b7"
+            value={codigoOperador}
+            onChangeText={setCodigoOperador}
+            keyboardType="numeric"
+            maxLength={4}
           />
 
-          <Text style={styles.label}>Contraseña</Text>
+          <Text style={styles.label}>Clave (Cédula de Identidad)</Text>
           <TextInput
             style={styles.input}
-            placeholder="••••••••"
-            placeholderTextColor="#64748b"
-            value={password}
-            onChangeText={setPassword}
+            placeholder="Ej: 22600509"
+            placeholderTextColor="#6ee7b7"
+            value={cedulaClave}
+            onChangeText={setCedulaClave}
             secureTextEntry
+            keyboardType="numeric"
           />
 
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleLogin}
-            disabled={loading}
-          >
-            {loading ? (
+          <TouchableOpacity style={styles.primaryButton} onPress={handleLogin} disabled={authLoading}>
+            {authLoading ? (
               <ActivityIndicator color="#ffffff" />
             ) : (
               <Text style={styles.buttonText}>INICIAR SESIÓN</Text>
             )}
           </TouchableOpacity>
+
+          {hasBiometrics && (
+            <TouchableOpacity
+              style={[styles.primaryButton, { backgroundColor: '#065f46', marginTop: 12, borderWidth: 1, borderColor: '#22c55e' }]}
+              onPress={onBiometricLogin}
+            >
+              <Text style={[styles.buttonText, { color: '#4ade80' }]}>🖐️ INGRESAR CON HUELLA</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -103,81 +127,71 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0B131E',
-  },
-  scrollContainer: {
+  authScroll: {
     flexGrow: 1,
     justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 40,
+    padding: 24,
   },
-  logoContainer: {
+  authHeader: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 24,
   },
-  logo: {
-    width: 130,
-    height: 130,
-    marginBottom: 16,
+  authLogo: {
+    width: 120,
+    height: 120,
+    marginBottom: 12,
   },
-  headerFlag: {
+  flagTitle: {
     color: '#ffffff',
     fontSize: 20,
     fontWeight: 'bold',
-    letterSpacing: 1,
   },
-  subHeader: {
-    color: '#10B981',
+  techSubtitle: {
+    color: '#4ade80',
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: 'bold',
     letterSpacing: 1.5,
+    marginTop: 2,
+  },
+  systemTitle: {
+    color: '#a7f3d0',
+    fontSize: 14,
     marginTop: 4,
   },
-  title: {
-    color: '#94a3b8',
-    fontSize: 14,
-    marginTop: 6,
-  },
-  formContainer: {
-    backgroundColor: '#16222F',
-    borderRadius: 16,
-    padding: 20,
+  card: {
+    backgroundColor: '#064230',
+    borderRadius: 14,
+    padding: 18,
     borderWidth: 1,
-    borderColor: '#243647',
+    borderColor: '#0a5c43',
   },
   label: {
-    color: '#cbd5e1',
+    color: '#e2e8f0',
     fontSize: 13,
     fontWeight: '600',
-    marginBottom: 8,
-    marginTop: 12,
+    marginBottom: 6,
+    marginTop: 8,
   },
   input: {
-    backgroundColor: '#0B131E',
+    backgroundColor: '#031f16',
     borderWidth: 1,
-    borderColor: '#334155',
-    borderRadius: 10,
+    borderColor: '#0a5c43',
+    borderRadius: 8,
     color: '#ffffff',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+  },
+  primaryButton: {
+    backgroundColor: '#16a34a',
+    borderRadius: 8,
     paddingVertical: 12,
-    fontSize: 15,
-  },
-  button: {
-    backgroundColor: '#10B981',
-    borderRadius: 10,
-    paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 24,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
+    marginTop: 14,
   },
   buttonText: {
     color: '#ffffff',
     fontWeight: 'bold',
-    fontSize: 15,
-    letterSpacing: 1,
+    fontSize: 14,
   },
 });
