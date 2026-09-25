@@ -1,8 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Component, ReactNode } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, View, SafeAreaView, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, SafeAreaView, ActivityIndicator, Text, ScrollView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
+import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
+
+// Carga segura de Audio
+let Audio: any = null;
+try {
+  Audio = require('expo-av').Audio;
+} catch (e) {
+  Audio = null;
+}
 
 import { supabase } from './lib/supabase';
 import { UserProfile, GuardShift, Novedad, ShiftChange, Manual } from './src/types';
@@ -17,6 +27,36 @@ import GuardiasScreen from './src/screens/GuardiasScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import ManualesScreen from './src/screens/ManualesScreen';
 
+// ==========================================
+// ESCUDO ANTICAÍDAS (Protección global)
+// ==========================================
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: any }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#04271c', padding: 20, justifyContent: 'center' }}>
+          <Text style={{ color: '#ef4444', fontSize: 18, fontWeight: 'bold', marginBottom: 12 }}>
+            ⚠️ Error detectado:
+          </Text>
+          <ScrollView style={{ maxHeight: 300, backgroundColor: '#063829', padding: 12, borderRadius: 8 }}>
+            <Text style={{ color: '#ffffff', fontSize: 13, fontFamily: 'monospace' }}>
+              {String(this.state.error?.message || this.state.error)}
+            </Text>
+          </ScrollView>
+        </SafeAreaView>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -30,15 +70,56 @@ export default function App() {
   const [manuals, setManuals] = useState<Manual[]>([]);
 
   useEffect(() => {
-    initAuth();
+    initApp();
   }, []);
 
-  const initAuth = async () => {
+  // ==========================================
+  // SOLICITUD GENERAL DE TODOS LOS PERMISOS
+  // ==========================================
+  const initApp = async () => {
     try {
-      const compatible = await LocalAuthentication.hasHardwareAsync();
-      const enrolled = await LocalAuthentication.isEnrolledAsync();
+      // 1. Permiso de Ubicación / GPS (Geocerca y Asistencia)
+      try {
+        await Location.requestForegroundPermissionsAsync();
+      } catch (err) {
+        console.log('Error permiso ubicación:', err);
+      }
+
+      // 2. Permiso de Micrófono (Notas de Voz en Chat)
+      try {
+        if (Audio && Audio.requestPermissionsAsync) {
+          await Audio.requestPermissionsAsync();
+        }
+      } catch (err) {
+        console.log('Error permiso micrófono:', err);
+      }
+
+      // 3. Permiso de Cámara (Fotos de Guardia)
+      try {
+        await ImagePicker.requestCameraPermissionsAsync();
+      } catch (err) {
+        console.log('Error permiso cámara:', err);
+      }
+
+      // 4. Permiso de Galería y Archivos
+      try {
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      } catch (err) {
+        console.log('Error permiso archivos/galería:', err);
+      }
+
+      // 5. Permiso y Verificación de Biometría / Huella
+      let compatible = false;
+      let enrolled = false;
+      try {
+        compatible = await LocalAuthentication.hasHardwareAsync();
+        enrolled = await LocalAuthentication.isEnrolledAsync();
+      } catch (authErr) {
+        console.log('Error huella/biometría:', authErr);
+      }
       setHasBiometrics(compatible && enrolled);
 
+      // 6. Cargar sesión de usuario si ya estaba iniciada
       const saved = await AsyncStorage.getItem('ven911_user_session');
       const bioActive = await AsyncStorage.getItem('ven911_biometrics_active');
 
@@ -51,23 +132,27 @@ export default function App() {
         }
       }
     } catch (e) {
-      console.log('Error auth:', e);
+      console.log('Error general en inicialización:', e);
     } finally {
       setLoading(false);
     }
   };
 
   const promptBiometricLogin = async (userFallback?: UserProfile) => {
-    const res = await LocalAuthentication.authenticateAsync({
-      promptMessage: 'Acceso Biométrico CCCT VEN 911',
-      cancelLabel: 'Cancelar',
-    });
-    if (res.success) {
-      if (userFallback) setProfile(userFallback);
-      else {
-        const saved = await AsyncStorage.getItem('ven911_user_session');
-        if (saved) setProfile(JSON.parse(saved));
+    try {
+      const res = await LocalAuthentication.authenticateAsync({
+        promptMessage: 'Acceso Biométrico CCCT VEN 911',
+        cancelLabel: 'Cancelar',
+      });
+      if (res.success) {
+        if (userFallback) setProfile(userFallback);
+        else {
+          const saved = await AsyncStorage.getItem('ven911_user_session');
+          if (saved) setProfile(JSON.parse(saved));
+        }
       }
+    } catch (e) {
+      console.log('Fallo huella:', e);
     }
   };
 
@@ -143,63 +228,63 @@ export default function App() {
     );
   }
 
-  if (!profile) {
-    return (
+  return (
+    <ErrorBoundary>
       <SafeAreaView style={styles.container}>
         <StatusBar style="light" />
-        <LoginScreen
-          hasBiometrics={hasBiometrics}
-          onLoginSuccess={(p) => setProfile(p)}
-          onBiometricLogin={() => promptBiometricLogin()}
-        />
+
+        {!profile ? (
+          <LoginScreen
+            hasBiometrics={hasBiometrics}
+            onLoginSuccess={(p) => setProfile(p)}
+            onBiometricLogin={() => promptBiometricLogin()}
+          />
+        ) : (
+          <>
+            <Header profile={profile} onLogout={handleLogout} />
+
+            <View style={{ flex: 1 }}>
+              {currentTab === 'dashboard' && (
+                <DashboardScreen
+                  profile={profile}
+                  allProfiles={allProfiles}
+                  guardShifts={guardShifts}
+                  onTogglePresencia={handleTogglePresencia}
+                  onRefreshData={loadAllData}
+                  onGoToNovedades={() => setCurrentTab('novedades')}
+                  onGoToGuardias={() => setCurrentTab('guardias')}
+                />
+              )}
+
+              {currentTab === 'novedades' && (
+                <NovedadesScreen
+                  profile={profile}
+                  novedadesList={novedadesList}
+                  onNovedadSaved={fetchNovedades}
+                />
+              )}
+
+              {currentTab === 'guardias' && (
+                <GuardiasScreen
+                  profile={profile}
+                  allProfiles={allProfiles}
+                  shiftChanges={shiftChanges}
+                  onRefreshGuardias={fetchChanges}
+                />
+              )}
+
+              {currentTab === 'chat' && <ChatScreen profile={profile} />}
+
+              {currentTab === 'manuales' && (
+                <ManualesScreen profile={profile} manuals={manuals} onManualAdded={fetchManuals} />
+              )}
+            </View>
+
+            <TabBar currentTab={currentTab} onSelectTab={(t) => setCurrentTab(t)} />
+          </>
+        )}
       </SafeAreaView>
-    );
-  }
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar style="light" />
-      <Header profile={profile} onLogout={handleLogout} />
-
-      <View style={{ flex: 1 }}>
-        {currentTab === 'dashboard' && (
-          <DashboardScreen
-            profile={profile}
-            allProfiles={allProfiles}
-            guardShifts={guardShifts}
-            onTogglePresencia={handleTogglePresencia}
-            onRefreshData={loadAllData}
-            onGoToNovedades={() => setCurrentTab('novedades')}
-            onGoToGuardias={() => setCurrentTab('guardias')}
-          />
-        )}
-
-        {currentTab === 'novedades' && (
-          <NovedadesScreen
-            profile={profile}
-            novedadesList={novedadesList}
-            onNovedadSaved={fetchNovedades}
-          />
-        )}
-
-        {currentTab === 'guardias' && (
-          <GuardiasScreen
-            profile={profile}
-            allProfiles={allProfiles}
-            shiftChanges={shiftChanges}
-            onRefreshGuardias={fetchChanges}
-          />
-        )}
-
-        {currentTab === 'chat' && <ChatScreen profile={profile} />}
-
-        {currentTab === 'manuales' && (
-          <ManualesScreen profile={profile} manuals={manuals} onManualAdded={fetchManuals} />
-        )}
-      </View>
-
-      <TabBar currentTab={currentTab} onSelectTab={(t) => setCurrentTab(t)} />
-    </SafeAreaView>
+    </ErrorBoundary>
   );
 }
 

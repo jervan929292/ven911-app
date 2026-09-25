@@ -96,7 +96,7 @@ export default function LoginScreen({ hasBiometrics, onLoginSuccess, onBiometric
           <Text style={styles.label}>Clave (Cédula de Identidad)</Text>
           <TextInput
             style={styles.input}
-            placeholder="Ej: 22600509"
+            placeholder="Ej: 12345678"
             placeholderTextColor="#6ee7b7"
             value={cedulaClave}
             onChangeText={setCedulaClave}

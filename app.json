@@ -9,14 +9,34 @@
     "splash": {
       "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0B131E"
+      "backgroundColor": "#04271c"
     },
     "android": {
+      "package": "com.ven911.control",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "RECORD_AUDIO",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_AUDIO",
+        "READ_MEDIA_VIDEO",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "POST_NOTIFICATIONS"
+      ],
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#0B131E"
-      },
-      "package": "com.ven911.control"
-    }
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#04271c"
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "565d6db5-ccd9-47d4-9f49-1fd65667f1ed"
+      }
+    },
+    "ios": {}
   }
 }
