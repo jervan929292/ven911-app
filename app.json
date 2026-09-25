@@ -32,11 +32,13 @@
         "backgroundColor": "#04271c"
       }
     },
+    "ios": {
+      "supportsTablet": true
+    },
     "extra": {
       "eas": {
         "projectId": "565d6db5-ccd9-47d4-9f49-1fd65667f1ed"
       }
-    },
-    "ios": {}
+    }
   }
 }
